@@ -7,12 +7,12 @@ echo "==> Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y git curl ffmpeg python3.11 python3-pip python3.11-venv build-essential cmake
 
-echo "==> Installing Node.js 20..."
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+echo "==> Installing Node.js 22..."
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs
 
 echo "==> Installing OpenClaw..."
-sudo npm install -g openclaw
+sudo npm install -g openclaw@latest
 
 echo "==> Cloning whisper.cpp..."
 cd ~
@@ -37,5 +37,5 @@ echo ""
 echo "Next steps:"
 echo "  1. Copy .env.example to .env and fill in your API keys"
 echo "  2. Copy openclaw.yaml.example to openclaw.yaml"
-echo "  3. Run: openclaw onboard"
+echo "  3. Run: openclaw onboard --install-daemon"
 echo "  4. Run: openclaw auth google"

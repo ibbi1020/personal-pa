@@ -104,7 +104,7 @@ chmod 600 .env
 On the **Droplet:**
 ```bash
 cd ~/pa
-openclaw onboard
+openclaw onboard --install-daemon
 ```
 
 The onboarding wizard will ask for your LLM provider — choose **OpenAI** (OpenRouter uses the same API format). When it asks for the API key, paste your `sk-or-...` key. When it asks for the base URL (or API endpoint), enter `https://openrouter.ai/api/v1`. For model, enter `openai/gpt-4o-mini`.
