@@ -18,7 +18,7 @@ WhatsApp-accessible personal assistant running on DigitalOcean. Handles finances
 | Web lookup | "search for DigitalOcean student pricing" / "summarise this article [url]" |
 | Daily briefing | Automatic at 8am — your day, due assignments, weekly spend |
 
-Voice notes work in **English and Urdu**.
+Voice notes work in **English and Urdu** (transcribed via Groq's free Whisper API).
 
 ---
 
@@ -68,12 +68,18 @@ From now on, SSH in as `pa` directly: `ssh pa@YOUR_IP`
 
 ---
 
-### Step 3 — Get an OpenRouter API key
+### Step 3 — Get API keys
 
+#### OpenRouter (LLM)
 1. Go to [openrouter.ai](https://openrouter.ai) → Sign in → Keys → Create Key
-2. Copy the key (starts with `sk-or-...`) — you'll need it in the next step
+2. Copy the key (starts with `sk-or-...`)
 3. Add a small amount of credit ($5 covers months of personal use)
-4. The default model is `openai/gpt-4o-mini` — cheap and supports receipt images. Browse alternatives at [openrouter.ai/models](https://openrouter.ai/models)
+4. The default model is `openai/gpt-4o-mini` — cheap and supports receipt images
+
+#### Groq (voice transcription — completely free)
+1. Go to [console.groq.com/keys](https://console.groq.com/keys) → Sign in (no credit card needed)
+2. Click **Create API Key** → copy the key (starts with `gsk_...`)
+3. Free tier: 2,000 voice requests/day, ~8 hours of audio/day — more than enough for personal use
 
 ---
 
@@ -89,6 +95,7 @@ nano .env
 Fill in:
 - `OPENROUTER_API_KEY` — your key from Step 3
 - `OPENROUTER_MODEL` — leave as `openai/gpt-4o-mini` or change to any model from openrouter.ai/models
+- `GROQ_API_KEY` — your Groq key from Step 3 (for voice note transcription)
 - `TIMEZONE` — your timezone (e.g. `Asia/Karachi`, `Europe/London`)
 
 Leave `GOOGLE_SHEETS_ID` blank for now (Step 6).
@@ -299,7 +306,7 @@ You (WhatsApp)
      ▼
 OpenClaw Agent  ←──────→  GPT-4o-mini (~$2/month)
      │
-     ├── whisper.cpp (local, free) — voice notes
+     ├── Groq Whisper API (free) — voice notes
      ├── Google Calendar — events
      ├── Google Classroom — assignment poller
      ├── Google Sheets — finance ledger

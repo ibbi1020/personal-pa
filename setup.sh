@@ -5,7 +5,7 @@ set -e
 
 echo "==> Updating system packages..."
 sudo apt update && sudo apt upgrade -y
-sudo apt install -y git curl ffmpeg python3.11 python3-pip python3.11-venv build-essential cmake
+sudo apt install -y git curl ffmpeg python3.11 python3-pip python3.11-venv build-essential
 
 echo "==> Installing Node.js 22..."
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
@@ -13,14 +13,6 @@ sudo apt install -y nodejs
 
 echo "==> Installing OpenClaw..."
 sudo npm install -g openclaw@latest
-
-echo "==> Cloning whisper.cpp..."
-cd ~
-git clone https://github.com/ggerganov/whisper.cpp
-cd whisper.cpp
-make -j$(nproc)
-echo "==> Downloading Whisper medium model (Urdu+English)..."
-bash ./models/download-ggml-model.sh medium
 
 echo "==> Setting up Python virtual environment..."
 cd ~/pa
@@ -36,6 +28,5 @@ echo "✅ Setup complete!"
 echo ""
 echo "Next steps:"
 echo "  1. Copy .env.example to .env and fill in your API keys"
-echo "  2. Copy openclaw.yaml.example to openclaw.yaml"
-echo "  3. Run: openclaw onboard --install-daemon"
-echo "  4. Run: openclaw auth google"
+echo "  2. Run: openclaw onboard --auth-choice openrouter-api-key"
+echo "  3. Run: openclaw auth google"
