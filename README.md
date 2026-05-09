@@ -147,7 +147,7 @@ After=network.target
 Type=simple
 User=pa
 WorkingDirectory=/home/pa/pa
-ExecStart=/usr/bin/openclaw start
+ExecStart=/usr/bin/openclaw gateway
 Restart=on-failure
 RestartSec=5
 
