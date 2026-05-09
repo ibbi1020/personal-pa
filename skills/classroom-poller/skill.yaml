@@ -1,0 +1,9 @@
+name: classroom-poller
+description: Polls Google Classroom for new assignments and notifies via WhatsApp
+version: 1.0.0
+triggers:
+  - type: cron
+    schedule: "*/15 * * * *"
+handler: handler.py
+env:
+  - GOOGLE_CREDENTIALS_PATH
