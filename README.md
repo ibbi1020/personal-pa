@@ -36,37 +36,35 @@ Work through these steps in order. Each step tells you exactly what to do.
    - **Region:** closest to you (e.g. London, Frankfurt)
    - **OS:** Ubuntu 22.04 LTS
    - **Plan:** Basic → Regular → **2 GB / 1 CPU / 50 GB** ($12/month)
-   - **Authentication:** SSH key — paste your public key (`cat ~/.ssh/id_rsa.pub` on your Mac)
+   - **Authentication:** SSH key — paste your public key (`cat ~/.ssh/id_ed25519.pub` on your Mac)
 4. Click **Create Droplet**
 5. Note the IP address shown in the dashboard
 
 ---
 
-### Step 2 — Upload this repo and run setup
+### Step 2 — Create the pa user and clone the repo
 
-On your **Mac terminal:**
+SSH into your Droplet as root:
 ```bash
-# Clone the repo
-git clone https://github.com/ibbi1020/personal-pa.git
-cd personal-pa
-
-# Upload to your Droplet (replace YOUR_IP)
-scp -r . root@YOUR_IP:~/pa-setup
+ssh root@YOUR_IP
 ```
 
-On your **Droplet** (SSH in first: `ssh root@YOUR_IP`):
+Create the `pa` user and copy your SSH key so you can log in as pa directly:
 ```bash
-# Create the pa user
 adduser pa
 usermod -aG sudo pa
 rsync --archive --chown=pa:pa ~/.ssh /home/pa
+```
 
-# Switch to pa user and run setup
+Switch to the pa user, clone the repo, and run setup:
+```bash
 su - pa
-cp -r ~/pa-setup ~/pa
+git clone https://github.com/ibbi1020/personal-pa.git ~/pa
 cd ~/pa
 bash setup.sh
 ```
+
+From now on, SSH in as `pa` directly: `ssh pa@YOUR_IP`
 
 ---
 
@@ -104,7 +102,6 @@ chmod 600 .env
 On the **Droplet:**
 ```bash
 cd ~/pa
-cp openclaw.yaml.example openclaw.yaml
 openclaw onboard
 ```
 
@@ -115,6 +112,23 @@ When it asks for a channel, choose **WhatsApp (wacli)**. A QR code will appear i
 **On your phone:** WhatsApp → Settings → Linked Devices → Link a Device → scan the QR code.
 
 Once linked, send yourself "hello" on WhatsApp. You should get a reply within a few seconds.
+
+Now add the audio transcription and daily briefing config to the `openclaw.yaml` that onboarding generated (open it with `nano ~/pa/openclaw.yaml` and append):
+```yaml
+audio:
+  transcriber: shell
+  command: /home/pa/pa/scripts/transcribe.sh {file}
+
+briefing:
+  enabled: true
+  schedule: "0 8 * * *"
+  timezone: Asia/Karachi
+  include:
+    - calendar_today
+    - assignments_due_7_days
+    - finance_summary_7_days
+```
+Adjust `timezone` to match yours (e.g. `Europe/London`).
 
 Set OpenClaw to run automatically:
 ```bash
@@ -173,13 +187,13 @@ Do this on your **laptop**:
 4. Go to **APIs & Services → OAuth consent screen**:
    - User type: External → Create
    - App name: `Personal PA`, support email: your Gmail
-   - Click **Add or remove scopes**, add:
-     - `calendar`
-     - `classroom.courses.readonly`
-     - `classroom.coursework.me.readonly`
-     - `gmail.readonly`
-     - `gmail.compose`
-     - `spreadsheets`
+   - Click **Add or remove scopes**, add (paste each URL into the filter box):
+     - `https://www.googleapis.com/auth/calendar.events`
+     - `https://www.googleapis.com/auth/classroom.courses.readonly`
+     - `https://www.googleapis.com/auth/classroom.coursework.me.readonly`
+     - `https://www.googleapis.com/auth/gmail.readonly`
+     - `https://www.googleapis.com/auth/gmail.compose`
+     - `https://www.googleapis.com/auth/spreadsheets`
    - Test users: add your Gmail address → Save
 5. Go to **APIs & Services → Credentials → Create Credentials → OAuth client ID**:
    - Application type: Desktop app, name: `pa-client` → Create
@@ -212,10 +226,12 @@ openclaw skill install todo
 openclaw skill install notes
 ```
 
-Load the custom skills:
+Load the custom skills (the Python venv must be active so dependencies are available):
 ```bash
+source ~/pa/venv/bin/activate
 openclaw skill load ./skills/receipt-to-sheets
 openclaw skill load ./skills/classroom-poller
+deactivate
 sudo systemctl restart openclaw
 ```
 
