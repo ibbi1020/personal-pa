@@ -1,0 +1,13 @@
+name: receipt-to-sheets
+description: Log a financial transaction to Google Sheets from a receipt image, voice note, or text
+version: 1.0.0
+triggers:
+  - type: intent
+    keywords: ["spent", "paid", "bought", "receipt", "expense", "income", "earned"]
+  - type: image
+    description: "receipt or invoice image"
+handler: handler.py
+env:
+  - GOOGLE_SHEETS_ID
+  - GOOGLE_CREDENTIALS_PATH
+  - OPENAI_API_KEY
