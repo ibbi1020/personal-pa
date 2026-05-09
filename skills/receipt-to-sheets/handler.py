@@ -18,8 +18,15 @@ def get_sheets_service():
     creds = Credentials.from_authorized_user_file(token_path, SCOPES)
     return build("sheets", "v4", credentials=creds)
 
+def _llm_client() -> OpenAI:
+    return OpenAI(
+        api_key=os.environ.get("OPENROUTER_API_KEY", ""),
+        base_url="https://openrouter.ai/api/v1",
+    )
+
 def extract_transaction(text: str, image_b64: Optional[str]) -> dict:
-    client = OpenAI()
+    model = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+    client = _llm_client()
 
     prompt = (
         f"Extract transaction details. Categories: {', '.join(CATEGORIES)}. "
@@ -30,7 +37,6 @@ def extract_transaction(text: str, image_b64: Optional[str]) -> dict:
 
     content: list = []
     if image_b64:
-        # detect MIME type from base64 header if present, default jpeg
         mime = "image/jpeg"
         if image_b64.startswith("iVBORw0"):  # PNG magic bytes base64-encoded
             mime = "image/png"
@@ -42,7 +48,7 @@ def extract_transaction(text: str, image_b64: Optional[str]) -> dict:
         content = [{"type": "text", "text": f"{prompt}\n\nInput: {text}"}]
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=model,
         messages=[{"role": "user", "content": content}],
         max_tokens=400,
     )

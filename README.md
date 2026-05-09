@@ -68,11 +68,12 @@ From now on, SSH in as `pa` directly: `ssh pa@YOUR_IP`
 
 ---
 
-### Step 3 — Get an OpenAI API key
+### Step 3 — Get an OpenRouter API key
 
-1. Go to [platform.openai.com](https://platform.openai.com) → API keys → Create new secret key
-2. Copy it — you'll need it in the next step
+1. Go to [openrouter.ai](https://openrouter.ai) → Sign in → Keys → Create Key
+2. Copy the key (starts with `sk-or-...`) — you'll need it in the next step
 3. Add a small amount of credit ($5 covers months of personal use)
+4. The default model is `openai/gpt-4o-mini` — cheap and supports receipt images. Browse alternatives at [openrouter.ai/models](https://openrouter.ai/models)
 
 ---
 
@@ -86,7 +87,8 @@ nano .env
 ```
 
 Fill in:
-- `OPENAI_API_KEY` — your key from Step 3
+- `OPENROUTER_API_KEY` — your key from Step 3
+- `OPENROUTER_MODEL` — leave as `openai/gpt-4o-mini` or change to any model from openrouter.ai/models
 - `TIMEZONE` — your timezone (e.g. `Asia/Karachi`, `Europe/London`)
 
 Leave `GOOGLE_SHEETS_ID` blank for now (Step 6).
@@ -105,7 +107,7 @@ cd ~/pa
 openclaw onboard
 ```
 
-The onboarding wizard will ask for your LLM provider — choose **OpenAI**, paste your key, choose model **gpt-4o-mini**.
+The onboarding wizard will ask for your LLM provider — choose **OpenAI** (OpenRouter uses the same API format). When it asks for the API key, paste your `sk-or-...` key. When it asks for the base URL (or API endpoint), enter `https://openrouter.ai/api/v1`. For model, enter `openai/gpt-4o-mini`.
 
 When it asks for a channel, choose **WhatsApp (wacli)**. A QR code will appear in the terminal.
 

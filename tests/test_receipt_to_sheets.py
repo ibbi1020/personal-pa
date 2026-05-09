@@ -16,7 +16,7 @@ import pytest
 # Bootstrap: set env vars before import so handle() deferred lookup works.
 # ---------------------------------------------------------------------------
 os.environ.setdefault("GOOGLE_SHEETS_ID", "fake-sheet-id")
-os.environ.setdefault("OPENAI_API_KEY", "fake-openai-key")
+os.environ.setdefault("OPENROUTER_API_KEY", "fake-openrouter-key")
 
 # Add the skill directory to sys.path so we can import handler directly
 SKILL_DIR = os.path.join(
@@ -137,15 +137,16 @@ class TestExtractTransaction:
         assert "text" in types_sent
 
     @patch("handler.OpenAI")
-    def test_uses_gpt4o_mini_model(self, MockOpenAI):
+    def test_uses_openrouter_model(self, MockOpenAI):
         client = MagicMock()
         MockOpenAI.return_value = client
         client.chat.completions.create.return_value = _make_openai_response(SAMPLE_TX)
 
+        os.environ["OPENROUTER_MODEL"] = "openai/gpt-4o-mini"
         handler.extract_transaction("paid £5 for coffee", None)
 
         _, kwargs = client.chat.completions.create.call_args
-        assert kwargs.get("model") == "gpt-4o-mini"
+        assert kwargs.get("model") == "openai/gpt-4o-mini"
 
     @patch("handler.OpenAI")
     def test_image_url_contains_base64_data(self, MockOpenAI):
