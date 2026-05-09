@@ -4,20 +4,16 @@ Unit tests for skills/receipt-to-sheets/handler.py
 All external calls (OpenAI, Google Sheets API) are mocked —
 no real API keys required.
 """
-import importlib
 import json
 import os
 import sys
-import types
 from datetime import date
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 # ---------------------------------------------------------------------------
-# Bootstrap: inject a fake GOOGLE_SHEETS_ID so the module-level assignment
-# `SHEET_ID = os.environ["GOOGLE_SHEETS_ID"]` doesn't raise KeyError when
-# the module is first imported.
+# Bootstrap: set env vars before import so handle() deferred lookup works.
 # ---------------------------------------------------------------------------
 os.environ.setdefault("GOOGLE_SHEETS_ID", "fake-sheet-id")
 os.environ.setdefault("OPENAI_API_KEY", "fake-openai-key")
@@ -166,6 +162,64 @@ class TestExtractTransaction:
         assert b64 in image_item["image_url"]["url"]
         assert image_item["image_url"]["url"].startswith("data:image/jpeg;base64,")
 
+    @patch("handler.OpenAI")
+    def test_png_mime_type_detected_from_magic_bytes(self, MockOpenAI):
+        """Base64 data starting with iVBORw0 (PNG magic) should use image/png."""
+        client = MagicMock()
+        MockOpenAI.return_value = client
+        client.chat.completions.create.return_value = _make_openai_response(SAMPLE_TX)
+
+        png_b64 = "iVBORw0KGgoAAAANSUhEUgAA"  # PNG magic bytes base64-encoded
+        handler.extract_transaction("receipt", png_b64)
+
+        _, kwargs = client.chat.completions.create.call_args
+        content = kwargs["messages"][0]["content"]
+        image_item = next(i for i in content if i["type"] == "image_url")
+        assert image_item["image_url"]["url"].startswith("data:image/png;base64,")
+
+    @patch("handler.OpenAI")
+    def test_raises_value_error_on_non_json_response(self, MockOpenAI):
+        """extract_transaction raises ValueError when LLM returns non-JSON."""
+        client = MagicMock()
+        MockOpenAI.return_value = client
+        msg = MagicMock()
+        msg.content = "Sorry, I cannot help with that."
+        choice = MagicMock()
+        choice.message = msg
+        resp = MagicMock()
+        resp.choices = [choice]
+        client.chat.completions.create.return_value = resp
+
+        with pytest.raises(ValueError, match="LLM returned non-JSON response"):
+            handler.extract_transaction("some text", None)
+
+    @patch("handler.OpenAI")
+    def test_strips_markdown_fenced_json(self, MockOpenAI):
+        """extract_transaction handles ```json ... ``` wrapped responses."""
+        client = MagicMock()
+        MockOpenAI.return_value = client
+        msg = MagicMock()
+        msg.content = "```json\n" + json.dumps(SAMPLE_TX) + "\n```"
+        choice = MagicMock()
+        choice.message = msg
+        resp = MagicMock()
+        resp.choices = [choice]
+        client.chat.completions.create.return_value = resp
+
+        result = handler.extract_transaction("spent £12.50 at Tesco", None)
+        assert result == SAMPLE_TX
+
+    @patch("handler.OpenAI")
+    def test_raises_value_error_on_missing_keys(self, MockOpenAI):
+        """extract_transaction raises ValueError when required keys are absent."""
+        client = MagicMock()
+        MockOpenAI.return_value = client
+        incomplete = {"merchant": "Tesco", "amount": 5.0}
+        client.chat.completions.create.return_value = _make_openai_response(incomplete)
+
+        with pytest.raises(ValueError, match="missing keys"):
+            handler.extract_transaction("some text", None)
+
 
 # ---------------------------------------------------------------------------
 # Tests: get_or_create_tab
@@ -184,13 +238,13 @@ def _make_sheets_service(existing_tabs=None):
 class TestGetOrCreateTab:
     def test_existing_tab_does_not_create(self):
         svc = _make_sheets_service(existing_tabs=["May 2026"])
-        handler.get_or_create_tab(svc, "May 2026")
+        handler.get_or_create_tab(svc, "fake-sheet-id", "May 2026")
         # batchUpdate should NOT have been called
         svc.spreadsheets().batchUpdate.assert_not_called()
 
     def test_missing_tab_creates_and_adds_header(self):
         svc = _make_sheets_service(existing_tabs=["Apr 2026"])
-        handler.get_or_create_tab(svc, "May 2026")
+        handler.get_or_create_tab(svc, "fake-sheet-id", "May 2026")
 
         svc.spreadsheets().batchUpdate.assert_called_once()
         body = svc.spreadsheets().batchUpdate.call_args[1]["body"]
@@ -205,7 +259,7 @@ class TestGetOrCreateTab:
 
     def test_header_written_to_correct_tab(self):
         svc = _make_sheets_service(existing_tabs=[])
-        handler.get_or_create_tab(svc, "Jun 2026")
+        handler.get_or_create_tab(svc, "fake-sheet-id", "Jun 2026")
 
         update_kwargs = svc.spreadsheets().values().update.call_args[1]
         assert update_kwargs["range"].startswith("Jun 2026!")
@@ -272,7 +326,7 @@ class TestHandle:
         _, _, svc, mock_tab = self._run_handle(ctx, tx_override=tx)
 
         expected_tab = date.today().strftime("%b %Y")
-        mock_tab.assert_called_once_with(svc, expected_tab)
+        mock_tab.assert_called_once_with(svc, "fake-sheet-id", expected_tab)
 
         append_kwargs = svc.spreadsheets().values().append.call_args[1]
         assert append_kwargs["range"].startswith(expected_tab)
@@ -294,3 +348,26 @@ class TestHandle:
         }
         result, *_ = self._run_handle(ctx, tx_override=tx)
         assert result == "Logged GBP 3.99 at Costa Coffee → Food & Drink"
+
+    def test_handle_returns_error_string_when_extract_raises(self):
+        """handle() must catch ValueError from extract_transaction and return user-friendly message."""
+        ctx = FakeContext(text="some garbage", source="text")
+        svc = _make_sheets_service()
+
+        with patch("handler.extract_transaction", side_effect=ValueError("LLM returned non-JSON response: ...")), \
+             patch("handler.get_sheets_service", return_value=svc):
+            result = handler.handle(ctx)
+
+        assert result.startswith("Sorry, I couldn't parse that transaction.")
+        assert "spent £5 on coffee" in result
+
+    def test_handle_returns_error_when_sheet_id_missing(self):
+        """handle() returns config error if GOOGLE_SHEETS_ID is not set."""
+        ctx = FakeContext(text="spent £5", source="text")
+        saved = os.environ.pop("GOOGLE_SHEETS_ID", None)
+        try:
+            result = handler.handle(ctx)
+            assert result == "GOOGLE_SHEETS_ID is not configured."
+        finally:
+            if saved is not None:
+                os.environ["GOOGLE_SHEETS_ID"] = saved

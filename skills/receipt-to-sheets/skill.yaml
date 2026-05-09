@@ -6,6 +6,8 @@ triggers:
     keywords: ["spent", "paid", "bought", "receipt", "expense", "income", "earned"]
   - type: image
     description: "receipt or invoice image"
+  - type: voice
+    description: "expense or income spoken as voice note"
 handler: handler.py
 env:
   - GOOGLE_SHEETS_ID

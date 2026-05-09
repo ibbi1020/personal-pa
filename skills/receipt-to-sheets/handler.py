@@ -1,11 +1,11 @@
-import os, json
+import os
+import json
 from datetime import date
 from typing import Optional
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from openai import OpenAI
 
-SHEET_ID = os.environ["GOOGLE_SHEETS_ID"]
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 CATEGORIES = ["Food & Drink", "Transport", "Shopping", "Bills",
                "Education", "Entertainment", "Income", "Other"]
@@ -20,56 +20,89 @@ def get_sheets_service():
 
 def extract_transaction(text: str, image_b64: Optional[str]) -> dict:
     client = OpenAI()
-    messages = [{"role": "user", "content": []}]
 
     prompt = (
         f"Extract transaction details. Categories: {', '.join(CATEGORIES)}. "
-        "Return JSON only: {\"merchant\": str, \"amount\": float, \"currency\": str, "
-        "\"category\": str, \"description\": str}. "
+        'Return JSON only: {"merchant": str, "amount": float, "currency": str, '
+        '"category": str, "description": str}. '
         "Use ISO currency codes (GBP, PKR, USD). If currency unclear, use GBP."
     )
 
+    content: list = []
     if image_b64:
-        messages[0]["content"] = [
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+        # detect MIME type from base64 header if present, default jpeg
+        mime = "image/jpeg"
+        if image_b64.startswith("iVBORw0"):  # PNG magic bytes base64-encoded
+            mime = "image/png"
+        content = [
+            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_b64}"}},
             {"type": "text", "text": prompt},
         ]
     else:
-        messages[0]["content"] = [{"type": "text", "text": f"{prompt}\n\nInput: {text}"}]
+        content = [{"type": "text", "text": f"{prompt}\n\nInput: {text}"}]
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini", messages=messages, max_tokens=200
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": content}],
+        max_tokens=400,
     )
-    return json.loads(response.choices[0].message.content)
 
-def get_or_create_tab(service, tab_name: str):
-    sheet = service.spreadsheets().get(spreadsheetId=SHEET_ID).execute()
+    raw = response.choices[0].message.content or ""
+    # strip markdown fences if model wraps output
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+
+    try:
+        tx = json.loads(raw)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise ValueError(f"LLM returned non-JSON response: {raw[:200]}") from exc
+
+    required = {"merchant", "amount", "currency", "category", "description"}
+    missing = required - tx.keys()
+    if missing:
+        raise ValueError(f"LLM response missing keys: {missing}")
+
+    return tx
+
+def get_or_create_tab(service, sheet_id: str, tab_name: str) -> None:
+    sheet = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
     tabs = [s["properties"]["title"] for s in sheet["sheets"]]
     if tab_name not in tabs:
         service.spreadsheets().batchUpdate(
-            spreadsheetId=SHEET_ID,
+            spreadsheetId=sheet_id,
             body={"requests": [{"addSheet": {"properties": {"title": tab_name}}}]}
         ).execute()
         service.spreadsheets().values().update(
-            spreadsheetId=SHEET_ID, range=f"{tab_name}!A1",
+            spreadsheetId=sheet_id, range=f"{tab_name}!A1",
             valueInputOption="RAW",
             body={"values": [["Date", "Merchant", "Amount", "Currency",
                               "Category", "Description", "Source"]]}
         ).execute()
 
-def handle(context):
+def handle(context) -> str:
     """
     context.text: str — the user's message or transcribed voice note
     context.image_b64: str | None — base64 image if user sent a photo
     context.source: str — "photo", "voice", or "text"
     Returns: str — confirmation message to send back
     """
-    tx = extract_transaction(context.text, context.image_b64)
+    sheet_id = os.environ.get("GOOGLE_SHEETS_ID", "")
+    if not sheet_id:
+        return "GOOGLE_SHEETS_ID is not configured."
+
+    try:
+        tx = extract_transaction(context.text, context.image_b64)
+    except ValueError as exc:
+        return f"Sorry, I couldn't parse that transaction. Try: 'spent £5 on coffee' ({exc})"
+
     today = date.today()
     tab_name = today.strftime("%b %Y")
 
     svc = get_sheets_service()
-    get_or_create_tab(svc, tab_name)
+    get_or_create_tab(svc, sheet_id, tab_name)
 
     row = [
         today.isoformat(),
@@ -81,7 +114,7 @@ def handle(context):
         context.source,
     ]
     svc.spreadsheets().values().append(
-        spreadsheetId=SHEET_ID,
+        spreadsheetId=sheet_id,
         range=f"{tab_name}!A1",
         valueInputOption="RAW",
         insertDataOption="INSERT_ROWS",
