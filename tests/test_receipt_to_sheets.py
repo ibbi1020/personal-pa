@@ -65,6 +65,45 @@ def _make_openai_response(tx: dict):
 
 
 # ---------------------------------------------------------------------------
+# Tests: get_sheets_service
+# ---------------------------------------------------------------------------
+class TestGetSheetsService:
+    @patch("handler.build")
+    @patch("handler.Credentials.from_authorized_user_file")
+    def test_uses_env_var_when_set(self, mock_from_file, mock_build):
+        """When GOOGLE_CREDENTIALS_PATH is set, use that path."""
+        custom_path = "/custom/path/to/token.json"
+        os.environ["GOOGLE_CREDENTIALS_PATH"] = custom_path
+
+        try:
+            mock_creds = MagicMock()
+            mock_from_file.return_value = mock_creds
+
+            handler.get_sheets_service()
+
+            mock_from_file.assert_called_once_with(custom_path, handler.SCOPES)
+            mock_build.assert_called_once_with("sheets", "v4", credentials=mock_creds)
+        finally:
+            del os.environ["GOOGLE_CREDENTIALS_PATH"]
+
+    @patch("handler.build")
+    @patch("handler.Credentials.from_authorized_user_file")
+    def test_uses_default_when_env_var_not_set(self, mock_from_file, mock_build):
+        """When GOOGLE_CREDENTIALS_PATH is not set, use default path."""
+        # Ensure the env var is not set
+        os.environ.pop("GOOGLE_CREDENTIALS_PATH", None)
+
+        mock_creds = MagicMock()
+        mock_from_file.return_value = mock_creds
+        expected_default = os.path.expanduser("~/.openclaw/google_token.json")
+
+        handler.get_sheets_service()
+
+        mock_from_file.assert_called_once_with(expected_default, handler.SCOPES)
+        mock_build.assert_called_once_with("sheets", "v4", credentials=mock_creds)
+
+
+# ---------------------------------------------------------------------------
 # Tests: extract_transaction
 # ---------------------------------------------------------------------------
 class TestExtractTransaction:

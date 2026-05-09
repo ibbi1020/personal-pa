@@ -11,9 +11,11 @@ CATEGORIES = ["Food & Drink", "Transport", "Shopping", "Bills",
                "Education", "Entertainment", "Income", "Other"]
 
 def get_sheets_service():
-    creds = Credentials.from_authorized_user_file(
-        os.path.expanduser("~/.openclaw/google_token.json"), SCOPES
+    token_path = os.environ.get(
+        "GOOGLE_CREDENTIALS_PATH",
+        os.path.expanduser("~/.openclaw/google_token.json")
     )
+    creds = Credentials.from_authorized_user_file(token_path, SCOPES)
     return build("sheets", "v4", credentials=creds)
 
 def extract_transaction(text: str, image_b64: Optional[str]) -> dict:
