@@ -12,6 +12,8 @@ duplicate notifications across invocations.
 
 import json
 import os
+import sys
+from datetime import date, timedelta
 from typing import Optional
 
 from google.oauth2.credentials import Credentials
@@ -20,7 +22,7 @@ from googleapiclient.discovery import build
 SCOPES = [
     "https://www.googleapis.com/auth/classroom.courses.readonly",
     "https://www.googleapis.com/auth/classroom.coursework.me.readonly",
-    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/calendar.events",
 ]
 
 SEEN_PATH = os.path.expanduser("~/.openclaw/seen_assignments.json")
@@ -61,12 +63,16 @@ def _get_credentials() -> Credentials:
     return Credentials.from_authorized_user_file(token_path, SCOPES)
 
 
-def get_classroom_service():
-    return build("classroom", "v1", credentials=_get_credentials())
+def get_classroom_service(creds=None):
+    if creds is None:
+        creds = _get_credentials()
+    return build("classroom", "v1", credentials=creds)
 
 
-def get_calendar_service():
-    return build("calendar", "v3", credentials=_get_credentials())
+def get_calendar_service(creds=None):
+    if creds is None:
+        creds = _get_credentials()
+    return build("calendar", "v3", credentials=creds)
 
 
 # ---------------------------------------------------------------------------
@@ -77,11 +83,12 @@ def create_calendar_event(
     calendar_svc, title: str, course_name: str, description: str, due_iso: str
 ) -> None:
     """Create an all-day Google Calendar event with a 24h popup reminder."""
+    end_date = (date.fromisoformat(due_iso) + timedelta(days=1)).isoformat()
     event = {
         "summary": f"📚 {title}",
         "description": f"Course: {course_name}\n\n{description}",
         "start": {"date": due_iso},
-        "end": {"date": due_iso},
+        "end": {"date": end_date},
         "reminders": {
             "useDefault": False,
             "overrides": [{"method": "popup", "minutes": 1440}],  # 24 h
@@ -118,20 +125,39 @@ def poll(classroom_svc, calendar_svc, seen: set) -> list[str]:
     """
     notifications: list[str] = []
 
-    courses_resp = classroom_svc.courses().list(courseStates=["ACTIVE"]).execute()
-    courses = courses_resp.get("courses", [])
+    # Paginate through all active courses
+    courses_response = classroom_svc.courses().list(courseStates=["ACTIVE"]).execute()
+    all_courses = courses_response.get("courses", [])
+    while "nextPageToken" in courses_response:
+        courses_response = classroom_svc.courses().list(
+            courseStates=["ACTIVE"], pageToken=courses_response["nextPageToken"]
+        ).execute()
+        all_courses.extend(courses_response.get("courses", []))
 
-    for course in courses:
+    for course in all_courses:
         course_id = course["id"]
         course_name = course.get("name", "Unknown Course")
 
-        cw_resp = (
+        # Paginate through all published courseWork for this course
+        cw_response = (
             classroom_svc.courses()
             .courseWork()
-            .list(courseId=course_id)
+            .list(courseId=course_id, courseWorkStates=["PUBLISHED"])
             .execute()
         )
-        assignments = cw_resp.get("courseWork", [])
+        assignments = cw_response.get("courseWork", [])
+        while "nextPageToken" in cw_response:
+            cw_response = (
+                classroom_svc.courses()
+                .courseWork()
+                .list(
+                    courseId=course_id,
+                    courseWorkStates=["PUBLISHED"],
+                    pageToken=cw_response["nextPageToken"],
+                )
+                .execute()
+            )
+            assignments.extend(cw_response.get("courseWork", []))
 
         for assignment in assignments:
             assignment_id = assignment.get("id", "")
@@ -151,20 +177,23 @@ def poll(classroom_svc, calendar_svc, seen: set) -> list[str]:
                     create_calendar_event(
                         calendar_svc, title, course_name, description, due_iso
                     )
-                except Exception:
-                    pass  # Calendar failure must not suppress notification
+                except Exception as exc:
+                    print(
+                        f"[classroom-poller] calendar event creation failed for '{title}': {exc}",
+                        file=sys.stderr,
+                    )
 
             # --- Build notification string ---
             due_str = due_iso if due_iso else "No due date"
-            snippet = description[:120]
-            if len(description) > 120:
-                snippet += "..."
-            notification = (
-                f"📚 New assignment: {title}\n"
-                f"Course: {course_name}\n"
-                f"Due: {due_str}\n"
-                f"{snippet}"
-            )
+            snippet = description[:120] + ("..." if len(description) > 120 else "")
+            lines = [
+                f"📚 New assignment: {title}",
+                f"Course: {course_name}",
+                f"Due: {due_str}",
+            ]
+            if snippet:
+                lines.append(snippet)
+            notification = "\n".join(lines)
             notifications.append(notification)
 
     return notifications
@@ -181,8 +210,9 @@ def handle(context=None) -> list[str]:
     """
     seen = load_seen()
 
-    classroom_svc = get_classroom_service()
-    calendar_svc = get_calendar_service()
+    creds = _get_credentials()
+    classroom_svc = get_classroom_service(creds)
+    calendar_svc = get_calendar_service(creds)
 
     notifications = poll(classroom_svc, calendar_svc, seen)
 

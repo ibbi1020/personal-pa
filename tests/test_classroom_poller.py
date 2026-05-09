@@ -16,7 +16,6 @@ import pytest
 # Use a module alias to avoid name-collision with receipt-to-sheets handler.
 # ---------------------------------------------------------------------------
 import importlib
-import types
 
 SKILL_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "skills", "classroom-poller")
@@ -81,7 +80,7 @@ def _make_classroom_svc(courses=None, assignments=None):
         "courses": courses
     }
 
-    # courses().courseWork().list(...).execute() → {"courseWork": [...]}
+    # courses().courseWork().list(..., courseWorkStates=[...]).execute() → {"courseWork": [...]}
     svc.courses.return_value.courseWork.return_value.list.return_value.execute.return_value = {
         "courseWork": assignments
     }
@@ -193,7 +192,7 @@ class TestPoll:
         body = call_kwargs["body"]
         assert "Homework 1" in body["summary"]
         assert body["start"]["date"] == "2026-06-15"
-        assert body["end"]["date"] == "2026-06-15"
+        assert body["end"]["date"] == "2026-06-16"  # one day after start
         # 24h popup reminder
         assert body["reminders"]["useDefault"] is False
         overrides = body["reminders"]["overrides"]
@@ -346,8 +345,10 @@ class TestHandle:
         calendar_svc = _make_calendar_svc()
 
         save_mock = MagicMock()
+        fake_creds = MagicMock()
 
-        with patch.object(handler, "get_classroom_service", return_value=classroom_svc), \
+        with patch.object(handler, "_get_credentials", return_value=fake_creds), \
+             patch.object(handler, "get_classroom_service", return_value=classroom_svc), \
              patch.object(handler, "get_calendar_service", return_value=calendar_svc), \
              patch.object(handler, "load_seen", return_value=set(initial_seen)), \
              patch.object(handler, "save_seen", save_mock):
@@ -376,7 +377,7 @@ class TestHandle:
         saved_seen = save_mock.call_args[0][0]
         assert "a1" in saved_seen
 
-    def test_handle_save_seen_not_called_when_nothing_new(self):
+    def test_handle_always_calls_save_seen_even_when_nothing_new(self):
         """save_seen is still called (to persist unchanged set), just no new IDs added."""
         _, save_mock = self._run_handle(initial_seen={"a1"})
         # save_seen is always called at the end of handle()
@@ -387,7 +388,8 @@ class TestHandle:
         classroom_svc = _make_classroom_svc()
         calendar_svc = _make_calendar_svc()
 
-        with patch.object(handler, "get_classroom_service", return_value=classroom_svc), \
+        with patch.object(handler, "_get_credentials", return_value=MagicMock()), \
+             patch.object(handler, "get_classroom_service", return_value=classroom_svc), \
              patch.object(handler, "get_calendar_service", return_value=calendar_svc), \
              patch.object(handler, "load_seen", return_value=set()), \
              patch.object(handler, "save_seen"):
