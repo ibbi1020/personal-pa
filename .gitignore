@@ -1,0 +1,10 @@
+.env
+google-credentials.json
+*.token.json
+__pycache__/
+*.pyc
+venv/
+.superpowers/
+node_modules/
+*.session
+wacli-session/

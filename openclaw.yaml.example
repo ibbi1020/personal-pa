@@ -1,0 +1,30 @@
+# OpenClaw configuration — copy to openclaw.yaml and fill in values
+# Run `openclaw onboard` to generate this automatically, then merge these settings
+
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  api_key: ${OPENAI_API_KEY}
+
+audio:
+  transcriber: shell
+  command: /home/pa/pa/scripts/transcribe.sh {file}
+
+briefing:
+  enabled: true
+  schedule: "0 8 * * *"
+  timezone: ${TIMEZONE}
+  include:
+    - calendar_today
+    - assignments_due_7_days
+    - finance_summary_7_days
+  format: |
+    Good morning! Here's your day:
+
+    📅 Today: {calendar_today}
+    📚 Assignments due soon: {assignments_due_7_days}
+    💰 Spending this week: {finance_summary_7_days}
+
+skills:
+  paths:
+    - ./skills
